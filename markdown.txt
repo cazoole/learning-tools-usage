@@ -63,7 +63,7 @@ echo to h6
 
 \*这是邮件示例\*
 
-<wei.liuw@huifu.com>
+<dengdaizhuanshen@163.com>
 
 
 ![替代文字](http://statics.w3cschool.cn/images/w3c/index-logo.png "标题文字")
