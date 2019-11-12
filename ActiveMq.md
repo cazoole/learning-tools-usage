@@ -150,7 +150,7 @@ failover:(tcp://localhost:61616,tcp://remotehost:61616)?initialReconnectDelay=10
 - shared File System: 共享文件系统，如SAN
 - jdbc master slave : 数据库集群方式
 ---
-# 异步投递
+## 异步投递
 ```
 - 使用useAsyncSend=true来配置，tcp://locahost:61616?jms.useAsyncSend=true | 或AMQFactory或AMQConnection设置该属性
 - 同步投递：强制同步或者在没有使用 事务的情况下，生产者以PERSISTENT 传送模式发送消息都是同步
