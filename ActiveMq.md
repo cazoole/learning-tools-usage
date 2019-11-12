@@ -9,6 +9,8 @@ JDBC | JNDI | EJB | RMI | Java IDL | JSP | Servlet | XML | JMS | JTA | JTS | JMA
 
 注：Active存在消息丢失、重复消费等问题，其性能尚可，但入手快，支持主从且文档丰富。
 ```
+
+---
 ## Destination
 ### Topic
 ```
@@ -37,10 +39,27 @@ JDBC | JNDI | EJB | RMI | Java IDL | JSP | Servlet | XML | JMS | JTA | JTS | JMA
 设置一些其他的消息，包含识别、去重、重点标注等内容，使用key：value方式设置。
 ```
 ---
+## 支持的协议
+### 支持的协议一览
+```
+支持的协议非常广泛：
+wire protocl: amq称为 OpenWrite协议，主要使用TCP长连接方式，也是amq默认的连接方式。高效且快速，稳定、高效广泛支持。
+NIO：类似TCP，但是比tcp更基于底层的访问操作，允许对有更多连接的应用增加服务器负载，支持此项需要手动增加对应的连接
+AMQP：统一消息服务的应用层标准高级消息队列协议，开放标准的面向消息的中间件协议设计。
+STOMP：流文本定向消息协议，面向消息的MOM简单文本协议
+MQTT：消息队列遥测传输协议，IBM开发的通信协议，对物联网更有吸引力。
+```
+
+### 自动侦测
+```
+1. OpenWire, STOMP, AMQP, and MQTT 可以被自动侦测并使用，一般配置NIO使用
+2. NIO的配置 <transportConnector name="nio" uri="nio://localhost:61618"/>
+3. 自动侦测配置<transportConnector name="nio+auto" uri="auto://localhost:61618"/>
+  此时，如果使用tcp://localhost:61618 就可以使用nio+tcp模式，也可以使用nio+mqtt等
+```
+
+---
 ## 消息的可靠性
-```
-  
-```
 ### 持久化
 - 持久消息：保证消息一次仅仅被消费一次（Queue默认为持久消息）
 - 非持久消息：故障时会被丢失（Topic默认是非持久消息）
@@ -124,5 +143,91 @@ JDBC | JNDI | EJB | RMI | Java IDL | JSP | Servlet | XML | JMS | JTA | JTS | JMA
   
 注： 对于集群部署的activemq，需要使用failover Transport方式进行访问，如:
 failover:(tcp://localhost:61616,tcp://remotehost:61616)?initialReconnectDelay=100
-  
 ```
+---
+## 集群
+- zk + levelDB: 可复制的levelDB集群方式
+- shared File System: 共享文件系统，如SAN
+- jdbc master slave : 数据库集群方式
+---
+# 异步投递
+```
+- 使用useAsyncSend=true来配置，tcp://locahost:61616?jms.useAsyncSend=true | 或AMQFactory或AMQConnection设置该属性
+- 同步投递：强制同步或者在没有使用 事务的情况下，生产者以PERSISTENT 传送模式发送消息都是同步
+- 异步投递：默认异步投递，但不不能保证消息一定发送成功。为了保证发送成功，一般使用ActvieMQMessageProducer对象设置MessageId,
+  而后使用带有回调函数的方法发送消息，回调函数有onSuccess和onException方法以便于确认是否发送成功。
+```
+---
+## 延迟投递和定时投递
+### 功能开启
+- 在conf/activemq.xml 中，在 <broker> 标签中增加开启标志，<broker ... scheduledSupport="true">
+### 延时投递
+```
+  AMQ_SCHEDULED_DELAY       long  定义延迟时间
+  AMQ_SCHEDULED_PERIOD      long  定义延时周期
+  AMQ_SCHEDULED_REPEAT      int   定义重复次数
+  AMQ_SCHEDULED_CRON        string 定义corn表达式
+  -- 延时投递
+  MessageProducer producer = session.createProducer(destination);
+  TextMessage message = session.createTextMessage("test msg");
+  long delay = 30 * 1000;
+  long period = 10 * 1000;
+  int repeat = 9;
+  message.setLongProperty(ScheduledMessage.AMQ_SCHEDULED_DELAY, delay);
+  message.setLongProperty(ScheduledMessage.AMQ_SCHEDULED_PERIOD, period);
+  message.setIntProperty(ScheduledMessage.AMQ_SCHEDULED_REPEAT, repeat);
+  producer.send(message);
+
+  -- cron表达式方式
+  MessageProducer producer = session.createProducer(destination);
+  TextMessage message = session.createTextMessage("test msg");
+  message.setStringProperty(ScheduledMessage.AMQ_SCHEDULED_CRON, "0 * * * *");
+  producer.send(message);
+
+  -- 混合模式
+  MessageProducer producer = session.createProducer(destination);
+  TextMessage message = session.createTextMessage("test msg");
+  message.setStringProperty(ScheduledMessage.AMQ_SCHEDULED_CRON, "0 * * * *");
+  message.setLongProperty(ScheduledMessage.AMQ_SCHEDULED_DELAY, 1000);
+  message.setLongProperty(ScheduledMessage.AMQ_SCHEDULED_PERIOD, 1000);
+  message.setIntProperty(ScheduledMessage.AMQ_SCHEDULED_REPEAT, 9);
+  producer.send(message);
+```
+
+---
+
+## 重试机制
+### 重试的场景
+- client使用了transaction且在session中调用了rollback方法
+- client使用了transaction但没有执行commit或关闭前没有执行commit
+- client在client_acknowledge模式下，session中调用了recover方法
+### 重试间隔和次数(主要是重试次数和重试间隔)
+- maximumRedeliveries： 最大重试次数默认为6，当重试次数超过该值，客户端会发送poison ack，服务端将该消息放入死信队列，DLQ
+- initialRedeliveryDelay或redeliveryDelay： 重试时间间隔
+### 死信队列 DLQ-Dead Letter Queue
+```
+- 一般有核心业务队列和死信队列组成总体消息队列
+- sharedDeadLetterStrategy: 共享死信队列，所有的poison ack消息都放入其中
+- individualDeadLetterStrategy: 独立死信队列，默认不区分queue和topic，单独指定
+- 非持久信息，过期不会放入死信队列，如需要，使用：<sharedDeadLetterStrategy processNonPersistent="true" />表明
+- 自动删除消息自动放入死信队列，不需要，使用：<sharedDeadLetterStrategy processExpired="false" />表明
+  ->  配置单独的死信队列 
+  <destinationPolicy>
+    <policyMap>
+      <policyEntries>
+        <!-- Set the following policy on all queues using the '>' wildcard -->
+        <policyEntry queue=">">
+          <deadLetterStrategy>
+            <individualDeadLetterStrategy queuePrefix="DLQ." useQueueForQueueMessages="true"/>
+            <!-- <sharedDeadLetterStrategy processExpired="false" /> -->
+          </deadLetterStrategy>
+        </policyEntry>
+      </policyEntries>
+    </policyMap>
+  </destinationPolicy>
+```
+---
+## 幂等性消费
+- 使用传统数据库，对消息的messageId做过滤的方式，进行主键冲突检测
+- 使用redis，通过消息的唯一标识符确保消息不会重复消费
+
