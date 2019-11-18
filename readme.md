@@ -5,3 +5,12 @@
 * git命令说明
 * markdown命令说明
 * restful
+* activeMq
+* tomcat
+* nginx
+* python
+* jvm
+* linux
+* git
+* redis
+* split-table
